@@ -1,17 +1,14 @@
 class Astar
-
   def initialize(start, destination)
     # create start and destination nodes
-    @start_node = Astar_Node.new(start['x'],   start['y'],           -1, -1, -1, -1)
-    @dest_node  = Astar_Node.new(destination['x'], destination['y'], -1, -1, -1, -1)
+    @start_node = Astar_Node.new(start.x, start.y, -1, -1, -1, -1)
+    @dest_node  = Astar_Node.new(destination.x, destination.y, -1, -1, -1, -1)
 
-    @open_nodes   = [] # conatins all open nodes (nodes to be inspected)
+    @open_nodes   = [ @start_node ] # conatins all open nodes (nodes to be inspected)
     @closed_nodes = [] # contains all closed nodes (node we've already inspected)
-
-    @open_nodes.push(@start_node) # push the start node
   end
 
-  # calc heuristic
+  # calc euclidian heuristic
   def heuristic(current_node, destination_node)
     return ( Math.sqrt( ((current_node.x - destination_node.x) ** 2) + ((current_node.y - destination_node.y) ** 2) ) ).floor
   end
@@ -37,39 +34,31 @@ class Astar
     return 0 # default
   end
 
-  # field passable?
-  def passable?(x, y)
-    return true
+  # field passable? (current_node is an Astar_Node)
+  def passable?(current_node)
+    x = current_node.x
+    y = current_node.y
+    return (x >= 0 and x < WIDTH and y >= 0 and y < HEIGHT)
   end
 
-  # expand node in all 4 directions
+  # expand node in all 4 directions (may be 8 wth diagonals or other logic)
   def expand(current_node)
-    x   = current_node.x
-    y   = current_node.y
-
-    return [ [x, (y - 1)],  # north
-             [x, (y + 1)],  # south
-             [(x + 1), y],  # east
-             [(x - 1), y] ] # west
+    x = current_node.x
+    y = current_node.y
+    return [ Astar_Node.new(x, y-1, @closed_nodes.size-1, -1, -1, -1),  # north
+             Astar_Node.new(x, y+1, @closed_nodes.size-1, -1, -1, -1),  # south
+             Astar_Node.new(x+1, y, @closed_nodes.size-1, -1, -1, -1),  # east
+             Astar_Node.new(x-1, y, @closed_nodes.size-1, -1, -1, -1) ] # west
   end
 
   def search
     while @open_nodes.size > 0 do
       # grab the lowest f(x)
-      low_i = 0
-      for i in 0..@open_nodes.size-1
-        if @open_nodes[i].f < @open_nodes[low_i].f then
-          low_i = i
-        end
-      end
-      best_node = low_i
-
-      # set current node
-      current_node = @open_nodes[best_node]
+      current_node = @open_nodes.min_by { |node| node.f }
 
       # check if we've reached our destination
-      if (current_node.x == @dest_node.x) and (current_node.y == @dest_node.y) then
-        path = [@dest_node]
+      if current_node == @dest_node
+        path = [ @dest_node ]
 
         # recreate the path
         while current_node.i != -1 do
@@ -81,52 +70,29 @@ class Astar
       end
 
       # remove the current node from open node list
-      @open_nodes.delete_at(best_node)
+      @open_nodes.delete(current_node)
 
       # and push onto the closed nodes list
-      @closed_nodes.push(current_node)
+      @closed_nodes << current_node
 
       # expand the current node
       neighbor_nodes = expand(current_node)
-      for n in 0..neighbor_nodes.size-1
-        neighbor = neighbor_nodes[n]
-        nx       = neighbor[0]
-        ny       = neighbor[1]
-
-        # if the new node is passable or our destination
-        if (passable?(nx, ny) or (nx == @dest_node.x and ny == @dest_node.y)) then
+      neighbor_nodes.each do |neighbor|
+        # check if the new node is passable or our destination
+        if (passable?(neighbor) or (neighbor == @dest_node))
           # check if the node is already in closed nodes list
-          in_closed = false
-          for j in 0..@closed_nodes.size-1
-            closed_node = @closed_nodes[j]
-            if nx == closed_node.x and ny == closed_node.y then
-              in_closed = true
-              break
-            end
-          end
-          next if in_closed
+          next if @closed_nodes.include?(neighbor)
 
           # check if the node is in the open nodes list
-          # if not, use it!
-          in_open = false
-          for j in 0..@open_nodes.size-1
-            open_node = @open_nodes[j]
-            if nx == open_node.x and ny == open_node.y then
-              in_open = true
-              break
-            end
-          end
+          next if @open_nodes.include?(neighbor)
 
-          unless in_open then
-            new_node = Astar_Node.new(nx, ny, @closed_nodes.size-1, -1, -1, -1)
+          # if not, setup costs!
+          neighbor.g = current_node.g + cost(current_node, neighbor)
+          neighbor.h = heuristic(neighbor, @dest_node)
+          neighbor.f = neighbor.g + neighbor.h
 
-            # setup costs
-            new_node.g = current_node.g + cost(current_node, new_node)
-            new_node.h = heuristic(new_node, @dest_node)
-            new_node.f = new_node.g + new_node.h
-
-            @open_nodes.push(new_node)
-          end
+          # and add it to open nodes list
+          @open_nodes << neighbor
         end
       end
     end
@@ -136,32 +102,48 @@ class Astar
 
 end
 
-# Astar node representation
-class Astar_Node
+# Base coordinate
+class Coord
   attr_accessor :x # x = x-position
   attr_accessor :y # y = y-position
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+  def ==(other)
+      other.x == @x and other.y == @y
+  end
+  def !=(other)
+      other.x != @x or other.y != @y
+  end
+end
+
+# Astar node representation
+class Astar_Node < Coord
   attr_accessor :i # i = parent index
   attr_accessor :g # g = cost from start to current node
   attr_accessor :h # h = cost from current node to destination
   attr_accessor :f # f = cost from start to destination going through the current node
 
   def initialize(x, y, i, g, h, f)
-    @x = x
-    @y = y
+    super(x, y)
     @i = i
     @g = g
     @h = h
     @f = f
   end
+  def ==(other)
+      other.x == @x and other.y == @y
+  end
+  def !=(other)
+      other.x != @x or other.y != @y
+  end
+  def to_s
+      "(#{@x},#{@y})"
+  end
 end
 
-start       = { 'x' => MY_X, 'y' => MY_X }
-destination = { 'x' => MY_X, 'y' => MY_Y }
-pathfinder  = Astar.new(start, destination)
-result      = astar.search # returns Array
-
-if (result.size > 0)
-  result.each{|node| # Astar_Node
-    # your code ...
-  }
-end
+#start_node  = Coord.new(1, 0)
+#dest_node   = Coord.new(7, 3)
+#result      = Astar.new(start_node, dest_node).search # returns Array
+#STDERR.puts result.join(" ")
